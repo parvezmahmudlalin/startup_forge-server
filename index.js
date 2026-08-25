@@ -1,12 +1,11 @@
 const dns = require("node:dns");
 
-// MongoDB DNS সমস্যা হলে Google DNS ব্যবহার করবে
+// MongoDB DNS সমস্যা সমাধান (Google DNS)
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
-
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 dotenv.config();
@@ -20,21 +19,21 @@ const PORT = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: ["http://localhost:3000", "http://localhost:5173"],
     credentials: true,
-  }),
+  })
 );
 
 app.use(express.json());
 
 // =========================
-// MONGODB
+// MONGODB CLIENT SETUP
 // =========================
 
 const uri = process.env.MONGODB_URI;
 
 if (!uri) {
-  console.error("❌ MONGODB_URI is missing in .env");
+  console.error("❌ MONGODB_URI is missing in .env file");
   process.exit(1);
 }
 
@@ -46,25 +45,18 @@ const client = new MongoClient(uri, {
   },
 });
 
-// =========================
-// SERVER
-// =========================
-
 async function run() {
   try {
-    // =========================
     // CONNECT TO MONGODB
-    // =========================
-
     await client.connect();
-
-    console.log("✅ Connected to MongoDB!");
+    console.log("✅ Successfully connected to MongoDB!");
 
     const db = client.db("startup_forge");
 
     const userCollection = db.collection("user");
     const startupsCollection = db.collection("startup");
     const opportunitiesCollection = db.collection("opportunities");
+    const applicationsCollection = db.collection("applications");
 
     // =========================
     // ROOT ROUTE
@@ -75,9 +67,54 @@ async function run() {
     });
 
     // =========================
-    // GET STARTUP BY EMAIL / ALL STARTUPS
+    // DASHBOARD OVERVIEW ROUTE
     // =========================
 
+    app.get("/api/founder/overview", async (req, res) => {
+      try {
+        const { email } = req.query;
+
+        if (!email) {
+          return res.status(400).json({
+            success: false,
+            message: "Founder email is required",
+          });
+        }
+
+        // Parallel processing using Promise.all for faster response times
+        const [totalOpportunities, totalApplications, acceptedMembers] =
+          await Promise.all([
+            opportunitiesCollection.countDocuments({ founder_email: email }),
+            applicationsCollection.countDocuments({ founder_email: email }),
+            applicationsCollection.countDocuments({
+              founder_email: email,
+              status: "Accepted",
+            }),
+          ]);
+
+        return res.status(200).json({
+          success: true,
+          stats: {
+            totalOpportunities,
+            totalApplications,
+            acceptedMembers,
+          },
+        });
+      } catch (error) {
+        console.error("❌ GET OVERVIEW ERROR:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to fetch overview stats",
+          error: error.message,
+        });
+      }
+    });
+
+    // =========================
+    // STARTUP API ROUTES
+    // =========================
+
+    // GET STARTUPS BY FOUNDER EMAIL
     app.get("/api/founder/startup", async (req, res) => {
       try {
         const { email } = req.query;
@@ -96,7 +133,6 @@ async function run() {
         return res.status(200).json(startups);
       } catch (error) {
         console.error("❌ GET STARTUP ERROR:", error);
-
         return res.status(500).json({
           success: false,
           message: "Failed to load startup",
@@ -105,10 +141,7 @@ async function run() {
       }
     });
 
-    // =========================
-    // GET SINGLE STARTUP BY ID (NEWLY ADDED TO FIX 404)
-    // =========================
-
+    // GET SINGLE STARTUP BY ID
     app.get("/api/founder/startup/:id", async (req, res) => {
       try {
         const { id } = req.params;
@@ -116,7 +149,7 @@ async function run() {
         if (!ObjectId.isValid(id)) {
           return res.status(400).json({
             success: false,
-            message: "Invalid startup ID",
+            message: "Invalid startup ID format",
           });
         }
 
@@ -134,7 +167,6 @@ async function run() {
         return res.status(200).json(startup);
       } catch (error) {
         console.error("❌ GET SINGLE STARTUP ERROR:", error);
-
         return res.status(500).json({
           success: false,
           message: "Failed to load startup details",
@@ -143,10 +175,7 @@ async function run() {
       }
     });
 
-    // =========================
     // CREATE STARTUP
-    // =========================
-
     app.post("/api/founder/startup", async (req, res) => {
       try {
         const {
@@ -158,11 +187,10 @@ async function run() {
           founder_email,
         } = req.body;
 
-        // Required field validation
         if (
-          !startup_name ||
-          !industry ||
-          !description ||
+          !startup_name?.trim() ||
+          !industry?.trim() ||
+          !description?.trim() ||
           !funding_stage ||
           !founder_email
         ) {
@@ -196,7 +224,6 @@ async function run() {
         });
       } catch (error) {
         console.error("❌ CREATE STARTUP ERROR:", error);
-
         return res.status(500).json({
           success: false,
           message: "Failed to create startup",
@@ -205,14 +232,10 @@ async function run() {
       }
     });
 
-    // =========================
     // UPDATE STARTUP
-    // =========================
-
     app.put("/api/founder/startup/:id", async (req, res) => {
       try {
         const { id } = req.params;
-
         const {
           startup_name,
           logo,
@@ -222,19 +245,17 @@ async function run() {
           founder_email,
         } = req.body;
 
-        // Validate ObjectId
         if (!ObjectId.isValid(id)) {
           return res.status(400).json({
             success: false,
-            message: "Invalid startup ID",
+            message: "Invalid startup ID format",
           });
         }
 
-        // Required fields
         if (
-          !startup_name ||
-          !industry ||
-          !description ||
+          !startup_name?.trim() ||
+          !industry?.trim() ||
+          !description?.trim() ||
           !funding_stage ||
           !founder_email
         ) {
@@ -265,7 +286,7 @@ async function run() {
         if (result.matchedCount === 0) {
           return res.status(404).json({
             success: false,
-            message: "Startup not found or you are not the founder",
+            message: "Startup not found or unauthorized",
           });
         }
 
@@ -275,7 +296,6 @@ async function run() {
         });
       } catch (error) {
         console.error("❌ UPDATE STARTUP ERROR:", error);
-
         return res.status(500).json({
           success: false,
           message: "Failed to update startup",
@@ -284,10 +304,7 @@ async function run() {
       }
     });
 
-    // =========================
     // DELETE STARTUP
-    // =========================
-
     app.delete("/api/founder/startup/:id", async (req, res) => {
       try {
         const { id } = req.params;
@@ -296,15 +313,12 @@ async function run() {
         if (!ObjectId.isValid(id)) {
           return res.status(400).json({
             success: false,
-            message: "Invalid startup ID",
+            message: "Invalid startup ID format",
           });
         }
 
-        const filter = {
-          _id: new ObjectId(id),
-        };
+        const filter = { _id: new ObjectId(id) };
 
-        // যদি email পাঠানো হয়, founder verify করবে
         if (email) {
           filter.founder_email = email;
         }
@@ -314,7 +328,7 @@ async function run() {
         if (result.deletedCount === 0) {
           return res.status(404).json({
             success: false,
-            message: "Startup not found",
+            message: "Startup not found or unauthorized",
           });
         }
 
@@ -324,7 +338,6 @@ async function run() {
         });
       } catch (error) {
         console.error("❌ DELETE STARTUP ERROR:", error);
-
         return res.status(500).json({
           success: false,
           message: "Failed to delete startup",
@@ -334,7 +347,7 @@ async function run() {
     });
 
     // =========================
-    // UPDATE USER PROFILE
+    // USER PROFILE ROUTE
     // =========================
 
     app.put("/api/users/profile", async (req, res) => {
@@ -352,13 +365,14 @@ async function run() {
           { email },
           {
             $set: {
-              name,
-              image,
-              bio,
-              skills,
+              ...(name && { name: name.trim() }),
+              ...(image && { image }),
+              ...(bio && { bio: bio.trim() }),
+              ...(skills && { skills }),
               updatedAt: new Date(),
             },
           },
+          { upsert: true }
         );
 
         return res.status(200).json({
@@ -368,7 +382,6 @@ async function run() {
         });
       } catch (error) {
         console.error("❌ UPDATE PROFILE ERROR:", error);
-
         return res.status(500).json({
           success: false,
           message: "Failed to update profile",
@@ -391,6 +404,7 @@ async function run() {
           commitment_level,
           deadline,
           founder_email,
+          startup_id,
         } = req.body;
 
         if (
@@ -401,35 +415,45 @@ async function run() {
           !deadline ||
           !founder_email
         ) {
-          return res.status(400).send({
+          return res.status(400).json({
             success: false,
             message: "All fields are required.",
           });
         }
 
+        const formattedSkills = Array.isArray(required_skills)
+          ? required_skills
+          : required_skills
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+
         const opportunityData = {
-          role_title,
-          required_skills,
+          startup_id:
+            startup_id && ObjectId.isValid(startup_id)
+              ? new ObjectId(startup_id)
+              : null,
+          role_title: role_title.trim(),
+          required_skills: formattedSkills,
           work_type,
           commitment_level,
           deadline,
           founder_email,
           status: "open",
           createdAt: new Date(),
+          updatedAt: new Date(),
         };
 
-        const result = await opportunitiesCollection.insertOne(
-          opportunityData,
-        );
+        const result = await opportunitiesCollection.insertOne(opportunityData);
 
-        res.status(201).send({
+        return res.status(201).json({
           success: true,
           message: "Opportunity created successfully",
           insertedId: result.insertedId,
         });
       } catch (error) {
-        console.error("ADD OPPORTUNITY ERROR:", error);
-        res.status(500).send({
+        console.error("❌ ADD OPPORTUNITY ERROR:", error);
+        return res.status(500).json({
           success: false,
           message: "Failed to create opportunity",
           error: error.message,
@@ -442,7 +466,7 @@ async function run() {
       try {
         const { email } = req.query;
         if (!email) {
-          return res.status(400).send({
+          return res.status(400).json({
             success: false,
             message: "Founder email is required",
           });
@@ -453,47 +477,223 @@ async function run() {
           .sort({ createdAt: -1 })
           .toArray();
 
-        res.status(200).send(opportunities);
+        return res.status(200).json(opportunities);
       } catch (error) {
-        res.status(500).send({
+        console.error("❌ GET OPPORTUNITIES ERROR:", error);
+        return res.status(500).json({
           success: false,
-          message: error.message,
+          message: "Failed to fetch opportunities",
+          error: error.message,
         });
       }
     });
 
-    await client.db("admin").command({
-      ping: 1,
+    // PUT: UPDATE OPPORTUNITY
+    app.put("/api/founder/opportunities/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const {
+          role_title,
+          required_skills,
+          work_type,
+          commitment_level,
+          deadline,
+        } = req.body;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid Opportunity ID format",
+          });
+        }
+
+        const formattedSkills = Array.isArray(required_skills)
+          ? required_skills
+          : required_skills
+              ?.split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            role_title,
+            required_skills: formattedSkills,
+            work_type,
+            commitment_level,
+            deadline,
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await opportunitiesCollection.updateOne(filter, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Opportunity not found",
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: "Opportunity updated successfully",
+        });
+      } catch (error) {
+        console.error("❌ UPDATE OPPORTUNITY ERROR:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to update opportunity",
+          error: error.message,
+        });
+      }
     });
 
-    console.log("✅ Pinged your deployment.");
-    console.log("✅ Successfully connected to MongoDB!");
+    // DELETE: DELETE OPPORTUNITY
+    app.delete("/api/founder/opportunities/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server is running on http://localhost:${PORT}`);
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid Opportunity ID format",
+          });
+        }
+
+        const result = await opportunitiesCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Opportunity not found",
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: "Opportunity deleted successfully",
+        });
+      } catch (error) {
+        console.error("❌ DELETE OPPORTUNITY ERROR:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to delete opportunity",
+          error: error.message,
+        });
+      }
     });
+
+    // =========================
+    // APPLICATION API ROUTES
+    // =========================
+
+    // GET: FETCH APPLICATIONS FOR FOUNDER
+    app.get("/api/founder/applications", async (req, res) => {
+      try {
+        const { email } = req.query;
+
+        if (!email) {
+          return res.status(400).json({
+            success: false,
+            message: "Founder email is required",
+          });
+        }
+
+        const applications = await applicationsCollection
+          .find({ founder_email: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        return res.status(200).json(applications);
+      } catch (error) {
+        console.error("❌ GET APPLICATIONS ERROR:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to fetch applications",
+          error: error.message,
+        });
+      }
+    });
+
+    // PATCH: ACCEPT / REJECT APPLICATION STATUS
+    app.patch("/api/founder/applications/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid Application ID format",
+          });
+        }
+
+        if (!["Accepted", "Rejected", "Pending"].includes(status)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid status value",
+          });
+        }
+
+        const result = await applicationsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Application not found",
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: `Application ${status.toLowerCase()} successfully`,
+        });
+      } catch (error) {
+        console.error("❌ UPDATE APPLICATION STATUS ERROR:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to update status",
+          error: error.message,
+        });
+      }
+    });
+
+    // HEALTH CHECK
+    await client.db("admin").command({ ping: 1 });
+    console.log("✅ Pinged deployment successfully.");
   } catch (error) {
     console.error("❌ SERVER STARTUP ERROR:", error);
-
-    // MongoDB/server connection fail হলে process বন্ধ
     process.exit(1);
   }
 }
 
-run();
+// START SERVER
+run().then(() => {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  });
+});
 
 // =========================
 // GRACEFUL SHUTDOWN
 // =========================
 
-process.on("SIGINT", async () => {
-  console.log("Shutting down server...");
+const handleShutdown = async (signal) => {
+  console.log(`\nReceived ${signal}. Shutting down server gracefully...`);
   await client.close();
   process.exit(0);
-});
+};
 
-process.on("SIGTERM", async () => {
-  console.log("Shutting down server...");
-  await client.close();
-  process.exit(0);
-});
+process.on("SIGINT", () => handleShutdown("SIGINT"));
+process.on("SIGTERM", () => handleShutdown("SIGTERM"));
