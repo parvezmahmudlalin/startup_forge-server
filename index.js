@@ -266,7 +266,6 @@ async function run() {
           ],
           mode: "payment",
           customer_email: email.trim(),
-          // ⚠️ FIXED: Success URL points to the Next.js payment success page
           success_url: `${origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${origin}/dashboard/founder/post-opportunity?canceled=true`,
         });
@@ -281,7 +280,6 @@ async function run() {
       }
     });
 
-    // ⚠️ FIXED: Changed from POST to GET and returns structured payment details
     app.get("/api/payment/verify-session", async (req, res) => {
       try {
         const { session_id } = req.query;
@@ -820,7 +818,6 @@ async function run() {
           });
         }
 
-        // Skill Array Handling Fix
         let skillsArray = [];
         if (Array.isArray(required_skills)) {
           skillsArray = required_skills;
@@ -1009,23 +1006,24 @@ async function run() {
       }
     });
 
-    // Mongodb Ping Health Check
+    // Ping health check
     await client.db("admin").command({ ping: 1 });
     console.log("✅ MongoDB Pinged deployment successfully.");
+
+    // Start Express listener after DB initialization completes
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
   } catch (error) {
     console.error("❌ SERVER STARTUP ERROR:", error);
     process.exit(1);
   }
 }
 
-// Start Server and Listener
-run().then(() => {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-  });
-});
+// Execute application initialization
+run();
 
-// Graceful Shutdown Setup
+// Graceful Shutdown Handler
 const handleShutdown = async (signal) => {
   console.log(`\nReceived ${signal}. Gracefully shutting down...`);
   try {
