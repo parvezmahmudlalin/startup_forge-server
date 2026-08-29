@@ -169,6 +169,7 @@ async function run() {
     const opportunities = db.collection("opportunities");
     const applications = db.collection("applications");
     const payments = db.collection("payments");
+    const notifications = db.collection("notifications");
 
     // =================================================
     // BASIC
@@ -184,6 +185,26 @@ async function run() {
         message: "Server is healthy",
       });
     });
+
+    // =================================================
+    // NOTIFICATIONS (ADDED FIX)
+    // =================================================
+
+    app.get(
+      "/api/notifications",
+      asyncHandler(async (req, res) => {
+        const email = getEmail(req);
+
+        const query = email ? { recipient_email: email } : {};
+        const result = await notifications
+          .find(query)
+          .sort({ createdAt: -1 })
+          .limit(20)
+          .toArray();
+
+        res.json(result);
+      })
+    );
 
     // =================================================
     // PUBLIC OPPORTUNITIES
@@ -1149,21 +1170,20 @@ async function run() {
     await client.db("admin").command({ ping: 1 });
 
     console.log("✅ MongoDB Pinged successfully.");
-
-    // =================================================
-    // START SERVER
-    // =================================================
-
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
   } catch (error) {
-    console.error("❌ SERVER STARTUP ERROR:", error);
-    process.exit(1);
+    console.error("❌ MONGODB CONNECTION ERROR:", error);
   }
 }
 
 run();
+
+// =====================================================
+// START SERVER (Outer level to avoid blocking app)
+// =====================================================
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
 
 // =====================================================
 // SHUTDOWN
