@@ -6,14 +6,21 @@ const cors = require("cors");
 
 const { connectDB, getClient } = require("./config/db");
 
+// =====================================================
 // DNS
+// =====================================================
+
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
+// =====================================================
+// APP
+// =====================================================
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // =====================================================
-// MIDDLEWARE
+// CORS
 // =====================================================
 
 app.use(
@@ -23,10 +30,13 @@ app.use(
       "http://localhost:5173",
       process.env.CLIENT_URL,
     ].filter(Boolean),
-
     credentials: true,
-  }),
+  })
 );
+
+// =====================================================
+// BODY PARSER
+// =====================================================
 
 app.use(express.json());
 
@@ -43,11 +53,17 @@ app.use("/api", require("./routes/profile"));
 app.use("/api", require("./routes/founder"));
 
 // =====================================================
+// ADMIN ROUTES
+// =====================================================
+
+app.use("/api/admin", require("./routes/admin"));
+
+// =====================================================
 // BASIC
 // =====================================================
 
 app.get("/", (req, res) => {
-  res.send("Startup Forge Server is Running!");
+  res.send("StartupForge Server is Running!");
 });
 
 app.get("/api/health", (req, res) => {
@@ -65,8 +81,6 @@ const startServer = async () => {
   try {
     await connectDB();
 
-    // await getClient().db("admin").command({ ping: 1 });
-
     console.log("MongoDB Pinged successfully.");
 
     app.listen(PORT, "0.0.0.0", () => {
@@ -74,7 +88,6 @@ const startServer = async () => {
     });
   } catch (error) {
     console.error("Failed to start server:", error);
-
     process.exit(1);
   }
 };
@@ -104,5 +117,4 @@ const handleShutdown = async (signal) => {
 };
 
 process.on("SIGINT", () => handleShutdown("SIGINT"));
-
 process.on("SIGTERM", () => handleShutdown("SIGTERM"));
