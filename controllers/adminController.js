@@ -13,21 +13,27 @@ exports.getAdminStats = async (req, res) => {
       totalStartups,
       totalOpportunities,
       approvedStartups,
-      paidTransactions,
+      payments,
     ] = await Promise.all([
       db.collection("user").countDocuments(),
       db.collection("startup").countDocuments(),
       db.collection("opportunities").countDocuments(),
-      db.collection("startup").countDocuments({ status: "Approved" }),
-      db.collection("payments").find({
-        payment_status: {
-          $in: ["paid", "Paid", "completed", "Completed", "succeeded"],
-        },
-      }).toArray(),
+      db.collection("startup").countDocuments({
+        $or: [{ status: "Approved" }, { status: "approved" }],
+      }),
+      db.collection("payments").find({}).toArray(),
     ]);
 
-    const totalRevenue = paidTransactions.reduce((total, payment) => {
-      return total + Number(payment.amount || 0);
+    // Calculate Total Revenue accurately
+    const totalRevenue = payments.reduce((total, payment) => {
+      const rawStatus = String(payment.status || payment.payment_status || "").toLowerCase();
+      const isPaid = ["paid", "completed", "succeeded", "valid", "success"].includes(rawStatus);
+
+      // Status 'completed' বা সফল হলে অথবা সরাসরি সব পেমেন্টের amount হিসাব করা
+      if (isPaid || payment.amount) {
+        return total + Number(payment.amount || 0);
+      }
+      return total;
     }, 0);
 
     return res.status(200).json({
@@ -152,7 +158,7 @@ exports.updateUserBlockStatus = async (req, res) => {
   }
 };
 
-// 5. ACCEPT / REJECT USER (NEW)
+// 5. ACCEPT / REJECT USER
 exports.updateUserStatus = async (req, res) => {
   try {
     const db = getDB();
@@ -321,15 +327,70 @@ exports.deleteStartup = async (req, res) => {
 exports.getAllTransactions = async (req, res) => {
   try {
     const db = getDB();
+
     const transactions = await db
       .collection("payments")
       .find({})
-      .sort({ paid_at: -1 })
+      .sort({ createdAt: -1 })
       .toArray();
+
+    const populatedTransactions = await Promise.all(
+      transactions.map(async (tx) => {
+        let userName = tx.userName || tx.user_name || tx.name || null;
+        let userEmail = tx.email || tx.userEmail || tx.user_email || null;
+        let startupName = tx.startupName || tx.startup_name || null;
+
+        // ১. ইমেইল দিয়ে ইউজারের নাম খোঁজা (যদি নাম না থাকে)
+        if (!userName && userEmail) {
+          try {
+            const user = await db.collection("user").findOne({ email: userEmail });
+            if (user) {
+              userName = user.name || user.fullName || user.userName;
+            }
+          } catch (e) {
+            console.error("User Lookup Error:", e);
+          }
+        }
+
+        // ২. startupId (ObjectId/String) দিয়ে সরাসরি স্টার্টআপের নাম খোঁজা
+        if (!startupName && tx.startupId) {
+          try {
+            const targetId =
+              typeof tx.startupId === "string" && ObjectId.isValid(tx.startupId)
+                ? new ObjectId(tx.startupId)
+                : tx.startupId;
+
+            let startup = await db.collection("startup").findOne({ _id: targetId });
+
+            if (!startup) {
+              startup = await db.collection("opportunities").findOne({ _id: targetId });
+            }
+
+            if (startup) {
+              startupName =
+                startup.startup_name ||
+                startup.startupName ||
+                startup.name ||
+                startup.title ||
+                startup.companyName ||
+                startup.company_name;
+            }
+          } catch (e) {
+            console.error("Startup Lookup Error:", e);
+          }
+        }
+
+        return {
+          ...tx,
+          userName: userName || userEmail || "N/A",
+          startupName: startupName || "N/A",
+        };
+      })
+    );
 
     return res.status(200).json({
       success: true,
-      transactions,
+      transactions: populatedTransactions,
     });
   } catch (error) {
     console.error("Get transactions error:", error);
