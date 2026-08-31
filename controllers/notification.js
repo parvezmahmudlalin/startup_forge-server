@@ -1,48 +1,77 @@
 const { getDB } = require("../config/db");
 const { getEmail } = require("../middleware/errorHandler");
 
+// =====================================================
+// GET NOTIFICATIONS
+// GET /api/notifications?email=...&role=...
+// =====================================================
 const getNotifications = async (req, res) => {
-  const email = getEmail(req);
+  let email = getEmail(req) || req.query.email;
+  const role = req.query.role?.toLowerCase();
 
-  if (!email) {
+  const db = getDB();
+  const query = {};
+
+  // Admin হলে সাধারণ admin নোটিফিকেশন অথবা নির্দিষ্ট email সম্পর্কিত নোটিফিকেশন ফিল্টার
+  if (role === "admin") {
+    query.$or = [
+      { role: "admin" },
+      ...(email ? [{ recipient_email: { $regex: new RegExp(`^${String(email).trim()}$`, "i") } }] : []),
+    ];
+  } else if (email) {
+    email = String(email).trim();
+    query.recipient_email = { $regex: new RegExp(`^${email}$`, "i") };
+  } else {
     return res.json([]);
   }
 
-  const result = await getDB()
+  const result = await db
     .collection("notifications")
-    .find({
-      recipient_email: email,
-    })
+    .find(query)
     .sort({ createdAt: -1 })
-    .limit(20)
+    .limit(30)
     .toArray();
 
   res.json(result);
 };
 
+// =====================================================
+// MARK ALL AS READ
+// PATCH /api/notifications?email=...
+// =====================================================
 const markAllAsRead = async (req, res) => {
-  const email = getEmail(req);
+  let email = getEmail(req) || req.query.email || req.body.email;
+  const role = req.body.role?.toLowerCase() || req.query.role?.toLowerCase();
 
-  if (!email) {
+  if (!email && role !== "admin") {
     return res.status(400).json({
       success: false,
-      message: "Email is required",
+      message: "Email or Role is required",
     });
   }
 
-  await getDB()
-    .collection("notifications")
-    .updateMany(
-      {
-        recipient_email: email,
-        isRead: false,
-      },
-      {
-        $set: {
-          isRead: true,
-        },
-      },
-    );
+  const db = getDB();
+  const query = {};
+
+  if (role === "admin") {
+    query.$or = [
+      { role: "admin" },
+      ...(email ? [{ recipient_email: { $regex: new RegExp(`^${String(email).trim()}$`, "i") } }] : []),
+    ];
+  } else {
+    email = String(email).trim();
+    query.recipient_email = { $regex: new RegExp(`^${email}$`, "i") };
+  }
+
+  // isRead, read, unread — সব ধরনের স্টেটাসের জন্য সেফ আপডেট
+  await db.collection("notifications").updateMany(query, {
+    $set: {
+      isRead: true,
+      read: true,
+      unread: false,
+      updatedAt: new Date(),
+    },
+  });
 
   res.json({
     success: true,

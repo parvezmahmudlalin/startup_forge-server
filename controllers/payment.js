@@ -219,6 +219,21 @@ const verifyPaymentSession = async (req, res) => {
       _id: result.insertedId,
       ...startupDocument,
     };
+
+    // ===================================================
+    // 🟢 SEND NOTIFICATION TO ADMIN
+    // ===================================================
+    const amountPaid = (session.amount_total || 0) / 100;
+    
+    await db.collection("notifications").insertOne({
+      role: "admin",
+      title: "New Payment Received",
+      message: `Received $${amountPaid} payment from ${startupData.founder_email} for creating startup "${startupData.startup_name}".`,
+      isRead: false,
+      read: false,
+      unread: true,
+      createdAt: new Date(),
+    });
   }
 
   // ===================================================

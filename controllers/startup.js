@@ -82,7 +82,19 @@ const createStartup = async (req, res) => {
     updatedAt: new Date(),
   };
 
-  const result = await getDB().collection("startup").insertOne(data);
+  const db = getDB();
+  const result = await db.collection("startup").insertOne(data);
+
+  // 🟢 🔔 Admin Notification for New Startup Creation
+  await db.collection("notifications").insertOne({
+    role: "admin",
+    title: "New Startup Created",
+    message: `Founder (${data.founder_email}) created a new startup "${data.startup_name}".`,
+    isRead: false,
+    read: false,
+    unread: true,
+    createdAt: new Date(),
+  });
 
   res.status(201).json({
     success: true,
@@ -105,6 +117,7 @@ const updateStartup = async (req, res) => {
     description,
     funding_stage,
     founder_email,
+    status, // Status update support (Admin Accept/Reject or Founder Edit)
   } = req.body;
 
   if (!isValidId(id)) {
@@ -114,35 +127,59 @@ const updateStartup = async (req, res) => {
     });
   }
 
-  if (!founder_email?.trim()) {
-    return res.status(400).json({
+  const db = getDB();
+
+  // আগের স্টার্টআপ অবজেক্ট খুঁজে বের করা নোটিফিকেশনের মেসেজের জন্য
+  const existingStartup = await db.collection("startup").findOne({ _id: objectId(id) });
+
+  if (!existingStartup) {
+    return res.status(404).json({
       success: false,
-      message: "Founder Email is required",
+      message: "Startup not found",
     });
   }
 
-  const result = await getDB().collection("startup").updateOne(
-    {
-      _id: objectId(id),
-      founder_email: founder_email.trim(),
-    },
-    {
-      $set: {
-        startup_name: startup_name?.trim(),
-        logo: logo || "",
-        industry: industry?.trim(),
-        description: description?.trim(),
-        funding_stage,
-        updatedAt: new Date(),
-      },
-    },
-  );
+  const updateFields = {
+    ...(startup_name && { startup_name: startup_name.trim() }),
+    ...(logo !== undefined && { logo }),
+    ...(industry && { industry: industry.trim() }),
+    ...(description && { description: description.trim() }),
+    ...(funding_stage && { funding_stage }),
+    ...(status && { status: status.toLowerCase() }),
+    updatedAt: new Date(),
+  };
+
+  const query = { _id: objectId(id) };
+  if (founder_email?.trim() && !status) {
+    query.founder_email = founder_email.trim();
+  }
+
+  const result = await db.collection("startup").updateOne(query, {
+    $set: updateFields,
+  });
 
   if (!result.matchedCount) {
     return res.status(404).json({
       success: false,
       message: "Startup not found or unauthorized",
     });
+  }
+
+  // 🟢 🔔 Admin accept/reject করলে Founder নোটিফিকেশন পাবে
+  if (status && status.toLowerCase() !== existingStartup.status?.toLowerCase()) {
+    const targetEmail = existingStartup.founder_email || founder_email;
+    if (targetEmail) {
+      await db.collection("notifications").insertOne({
+        recipient_email: targetEmail.toLowerCase(),
+        role: "founder",
+        title: `Startup ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+        message: `Your startup "${existingStartup.startup_name}" status has been updated to "${status}".`,
+        isRead: false,
+        read: false,
+        unread: true,
+        createdAt: new Date(),
+      });
+    }
   }
 
   res.json({

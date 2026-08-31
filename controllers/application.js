@@ -183,6 +183,22 @@ const createApplication = async (req, res) => {
     .collection("applications")
     .insertOne(application);
 
+  // ---------------------------------------------------
+  // 🟢 Send Notification to Founder
+  // ---------------------------------------------------
+  if (application.founder_email) {
+    await db.collection("notifications").insertOne({
+      recipient_email: application.founder_email,
+      role: "founder",
+      title: "New Application Received",
+      message: `${application.collaborator_name} applied for ${opportunity.title || "an opportunity"}.`,
+      isRead: false,
+      read: false,
+      unread: true,
+      createdAt: new Date(),
+    });
+  }
+
   res.status(201).json({
     success: true,
     message: "Application submitted successfully!",
@@ -233,10 +249,9 @@ const getMyApplications = async (req, res) => {
           preserveNullAndEmptyArrays: true,
         },
       },
-      // 🟢 ২. localField এ নতুন startup_id_obj ব্যবহার করুন
       {
         $lookup: {
-          from: "startup", // নিশ্চিত হোন DB তে collection নাম 'startup' নাকি 'startups'
+          from: "startups",
           localField: "startup_id_obj",
           foreignField: "_id",
           as: "startup_details",
@@ -357,10 +372,6 @@ const getFounderApplications = async (req, res) => {
         },
       },
 
-      // ------------------------------------------------
-      // Opportunity
-      // ------------------------------------------------
-
       {
         $lookup: {
           from: "opportunities",
@@ -376,10 +387,6 @@ const getFounderApplications = async (req, res) => {
           preserveNullAndEmptyArrays: true,
         },
       },
-
-      // ------------------------------------------------
-      // Startup
-      // ------------------------------------------------
 
       {
         $lookup: {
@@ -415,7 +422,6 @@ const getFounderApplications = async (req, res) => {
 
 const updateApplicationStatus = async (req, res) => {
   const { id } = req.params;
-
   const { status } = req.body;
 
   if (!isValidId(id)) {
@@ -490,6 +496,29 @@ const updateApplicationStatus = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to update application.",
+    });
+  }
+
+  // ---------------------------------------------------
+  // 🟢 Send Notification to Collaborator
+  // ---------------------------------------------------
+  if (application.collaborator_email) {
+    // Opportunity title বের করার অপশনাল কোয়েরি
+    const opportunity = await db.collection("opportunities").findOne({
+      _id: application.opportunity_id,
+    });
+
+    const opportunityTitle = opportunity?.title || "the opportunity";
+
+    await db.collection("notifications").insertOne({
+      recipient_email: application.collaborator_email,
+      role: "collaborator",
+      title: `Application ${status}`,
+      message: `Your application for "${opportunityTitle}" has been ${status.toLowerCase()} by the founder.`,
+      isRead: false,
+      read: false,
+      unread: true,
+      createdAt: new Date(),
     });
   }
 

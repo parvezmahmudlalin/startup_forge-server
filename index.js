@@ -31,7 +31,7 @@ app.use(
       process.env.CLIENT_URL,
     ].filter(Boolean),
     credentials: true,
-  })
+  }),
 );
 
 // =====================================================

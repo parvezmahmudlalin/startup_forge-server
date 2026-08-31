@@ -149,19 +149,45 @@ const createOpportunity = async (req, res) => {
     startup_id,
   } = req.body;
 
-  if (!role_title?.trim() || !founder_email?.trim()) {
+  // ১. মৌলিক ফিল্ডগুলোর উপস্থিতি চেক
+  if (!role_title?.trim() || !founder_email?.trim() || !startup_id) {
     return res.status(400).json({
       success: false,
-      message: "Role title and Founder Email are required.",
+      message: "Role title, Founder Email, and Startup ID are required.",
     });
   }
 
-  const data = {
-    startup_id:
-      startup_id && isValidId(startup_id)
-        ? objectId(startup_id)
-        : startup_id,
+  if (!isValidId(startup_id)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid Startup ID format.",
+    });
+  }
 
+  // 🟢 ২. ডাটাবেজ থেকে স্টার্টআপটি খোঁজা (FIXED Collection Name: "startup")
+  const db = getDB();
+  const startup = await db
+    .collection("startup") // 👈 "startups" থেকে পরিবর্তন করে "startup" করা হয়েছে
+    .findOne({ _id: objectId(startup_id) });
+
+  if (!startup) {
+    return res.status(404).json({
+      success: false,
+      message: "Associated startup not found.",
+    });
+  }
+
+  if (startup.status?.toLowerCase() !== "approved") {
+    return res.status(403).json({
+      success: false,
+      message:
+        "Your startup is not approved yet. Only approved startups can post opportunities.",
+    });
+  }
+
+  // ৩. স্টার্টআপ অনুমোদিত হলে অপোরচুনিটি তৈরি
+  const data = {
+    startup_id: objectId(startup_id),
     role_title: role_title.trim(),
     description: String(description || "").trim(),
     location: String(location || "Remote").trim(),
@@ -176,9 +202,18 @@ const createOpportunity = async (req, res) => {
     updatedAt: new Date(),
   };
 
-  const result = await getDB()
-    .collection("opportunities")
-    .insertOne(data);
+  const result = await db.collection("opportunities").insertOne(data);
+
+  // 🟢 🔔 Send Notification to Admin
+  await db.collection("notifications").insertOne({
+    role: "admin",
+    title: "New Opportunity Posted",
+    message: `A new opportunity "${data.role_title}" was posted for ${startup.startup_name || startup.name || "a startup"}.`,
+    isRead: false,
+    read: false,
+    unread: true,
+    createdAt: new Date(),
+  });
 
   res.status(201).json({
     success: true,
@@ -225,7 +260,7 @@ const updateOpportunity = async (req, res) => {
           deadline,
           updatedAt: new Date(),
         },
-      },
+      }
     );
 
   if (!result.matchedCount) {
