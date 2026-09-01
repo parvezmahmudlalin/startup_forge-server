@@ -31,7 +31,7 @@ app.use(
       process.env.CLIENT_URL,
     ].filter(Boolean),
     credentials: true,
-  }),
+  })
 );
 
 // =====================================================
@@ -45,11 +45,17 @@ app.use(express.json());
 // =====================================================
 
 app.use("/api", require("./routes/startup"));
+
 app.use("/api", require("./routes/opportunity"));
+
 app.use("/api", require("./routes/application"));
+
 app.use("/api", require("./routes/payment"));
+
 app.use("/api", require("./routes/notification"));
+
 app.use("/api", require("./routes/profile"));
+
 app.use("/api", require("./routes/founder"));
 
 // =====================================================
@@ -59,7 +65,7 @@ app.use("/api", require("./routes/founder"));
 app.use("/api/admin", require("./routes/admin"));
 
 // =====================================================
-// BASIC
+// BASIC ROUTES
 // =====================================================
 
 app.get("/", (req, res) => {
@@ -70,6 +76,27 @@ app.get("/api/health", (req, res) => {
   res.json({
     success: true,
     message: "Server is healthy",
+  });
+});
+
+// =====================================================
+// 404 & GLOBAL ERROR HANDLER
+// =====================================================
+
+// 1. Unmatched Routes Handler (404)
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Cannot ${req.method} ${req.originalUrl}`,
+  });
+});
+
+// 2. Global Internal Error Handler (500)
+app.use((err, req, res, next) => {
+  console.error("Global Express Error:", err.stack);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error",
   });
 });
 
@@ -95,7 +122,7 @@ const startServer = async () => {
 startServer();
 
 // =====================================================
-// SHUTDOWN
+// SHUTDOWN HANDLERS
 // =====================================================
 
 const handleShutdown = async (signal) => {
@@ -117,4 +144,5 @@ const handleShutdown = async (signal) => {
 };
 
 process.on("SIGINT", () => handleShutdown("SIGINT"));
+
 process.on("SIGTERM", () => handleShutdown("SIGTERM"));

@@ -1,7 +1,16 @@
 const express = require("express");
-
 const router = express.Router();
 
+// =====================================================
+// MIDDLEWARES
+// =====================================================
+const verifyToken = require("../middleware/verifyToken");
+const verifyRole = require("../middleware/verifyRole");
+const { asyncHandler } = require("../middleware/errorHandler");
+
+// =====================================================
+// APPLICATION CONTROLLER
+// =====================================================
 const {
   createApplication,
   getMyApplications,
@@ -11,49 +20,55 @@ const {
   deleteApplication,
 } = require("../controllers/application");
 
-const { asyncHandler } = require("../middleware/errorHandler");
-
 // =====================================================
-// COLLABORATOR
+// COLLABORATOR / USER ROUTES (Loged in users)
 // =====================================================
 
-// Apply to an opportunity
+// 1. Create Application
 router.post(
   "/applications",
+  verifyToken,
   asyncHandler(createApplication)
 );
 
-// My applications
+// 2. Get User's Own Applications
 router.get(
-  "/my-applications",
+  "/applications/my-applications",
+  verifyToken,
   asyncHandler(getMyApplications)
 );
 
-// Single application
+// 3. Get Single Application Details
 router.get(
   "/applications/:id",
+  verifyToken,
   asyncHandler(getSingleApplication)
 );
 
-// Delete application
+// 4. Delete Application
 router.delete(
   "/applications/:id",
+  verifyToken,
   asyncHandler(deleteApplication)
 );
 
 // =====================================================
-// FOUNDER
+// FOUNDER SPECIFIC ROUTES (Requires Founder Role)
 // =====================================================
 
-// Founder applications
+// 5. Founder Applications List
 router.get(
   "/founder/applications",
+  verifyToken,
+  verifyRole("founder", "admin"),
   asyncHandler(getFounderApplications)
 );
 
-// Accept / Reject application
+// 6. Accept / Reject Application Status
 router.patch(
   "/founder/applications/:id",
+  verifyToken,
+  verifyRole("founder", "admin"),
   asyncHandler(updateApplicationStatus)
 );
 

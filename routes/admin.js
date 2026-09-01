@@ -1,12 +1,22 @@
 const express = require("express");
 const router = express.Router();
 
+// =====================================================
+// MIDDLEWARES
+// =====================================================
+const verifyToken = require("../middleware/verifyToken");
+const verifyRole = require("../middleware/verifyRole");
+const { asyncHandler } = require("../middleware/errorHandler");
+
+// =====================================================
+// ADMIN CONTROLLER
+// =====================================================
 const {
   getAdminStats,
   getAllUsers,
   updateUserRole,
   updateUserBlockStatus,
-  updateUserStatus, // <-- Accept/Reject Controller Import
+  updateUserStatus,
   deleteUser,
   getAllStartups,
   updateStartupStatus,
@@ -14,20 +24,38 @@ const {
   getAllTransactions,
 } = require("../controllers/adminController");
 
-// Stats & Users Routes
-router.get("/stats", getAdminStats);
-router.get("/users", getAllUsers);
-router.patch("/users/:id/role", updateUserRole);
-router.patch("/users/:id/block", updateUserBlockStatus);
-router.patch("/users/:id/status", updateUserStatus); // <-- Accept/Reject Status Route
-router.delete("/users/:id", deleteUser);
+// =====================================================
+// GLOBAL ADMIN SECURITY GUARD
+// =====================================================
+// এই ফাইলটির প্রতিটি অ্যান্ডপয়েন্টে প্রবেশের আগে টোকেন ও অ্যাডমিন রোল ভ্যালিড হতে হবে
+router.use(verifyToken, verifyRole("admin"));
 
-// Startups Routes
-router.get("/startups", getAllStartups);
-router.patch("/startups/:id", updateStartupStatus);
-router.delete("/startups/:id", deleteStartup);
+// =====================================================
+// STATS & USERS ROUTES
+// =====================================================
+router.get("/stats", asyncHandler(getAdminStats));
+router.get("/users", asyncHandler(getAllUsers));
 
-// Transactions Routes
-router.get("/transactions", getAllTransactions);
+router.patch("/users/:id/role", asyncHandler(updateUserRole));
+router.patch("/users/:id/block", asyncHandler(updateUserBlockStatus));
+router.patch("/users/:id/status", asyncHandler(updateUserStatus));
 
+router.delete("/users/:id", asyncHandler(deleteUser));
+
+// =====================================================
+// STARTUPS ROUTES
+// =====================================================
+router.get("/startups", asyncHandler(getAllStartups));
+
+router.patch("/startups/:id", asyncHandler(updateStartupStatus));
+router.delete("/startups/:id", asyncHandler(deleteStartup));
+
+// =====================================================
+// TRANSACTIONS ROUTES
+// =====================================================
+router.get("/transactions", asyncHandler(getAllTransactions));
+
+// =====================================================
+// EXPORT ROUTER
+// =====================================================
 module.exports = router;
